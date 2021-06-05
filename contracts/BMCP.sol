@@ -1,29 +1,31 @@
 //SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.0;
-import 'https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC20/ERC20.sol';
-import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/utils/math/SafeMath.sol";
-import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/access/Ownable.sol";
+pragma solidity ^0.6.0;
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/math/SafeMath.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import './Lock.sol';
 
-import './ERC1132.sol';
 
-
-contract LockableToken is ERC1132, ERC20,Ownable {
+contract LockableToken is Lock, ERC20,Ownable {
 
     using SafeMath for uint256;
     
-    // bool private _vault1;
-    // bool private _vault2;
-    // bool private _vault3;
-    // bool private _vault4;
+    uint256 sendPercentage=  20;
+    uint256 lockPercentage = 80;
     
     
-    //     struct vestingSchedule {
-    //     bool isValid;               /* true if an entry exists and is valid */
-    //     uint32 duration;            /* Duration of the vesting schedule, with respect to the grant start day, in days. */
-    // }
-    // mapping(address => vestingSchedule) private _vestingSchedules;
-    //% needs to make
-    //all logic will be in smart contract.
+    bool private _vault1;
+    bool private _vault2;
+    bool private _vault3;
+    bool private _vault4;
+    
+    
+    struct vestingSchedule {
+    bool isValid;               /* true if an entry exists and is valid */
+    uint32 duration;            /* Duration of the vesting schedule, with respect to the grant start day, in days. */
+    }
+    mapping(address => vestingSchedule) private _vestingSchedules;
+
     
    /**
     * @dev Error messages for require statements
@@ -38,7 +40,7 @@ contract LockableToken is ERC1132, ERC20,Ownable {
     */
     
     
-     constructor() ERC20("bmpc", "BMPC") {
+     constructor() ERC20("bmpc", "BMPC") public{
         _mint(msg.sender, 1000000*10**18);
     }
     
@@ -49,58 +51,67 @@ contract LockableToken is ERC1132, ERC20,Ownable {
      * @param _reason The reason to lock tokens
      * @param _amount Number of tokens to be locked
      * @param _time Lock time in seconds
+     * @param _beneficiary address
      */
-    function lock(bytes32 _reason, uint256 _amount, uint256 _time)
+    function lock(bytes32 _reason, uint256 _amount, uint256 _time, address _beneficiary)
         public override onlyOwner
         returns (bool)
     {
-        //modified
-        // uint256 validUntil = now.add(_time); //solhint-disable-line
-        uint256 validUntil = block.timestamp.add(_time); //solhint-disable-line
+         uint256 validUntil = now.add(_time); //solhint-disable-line
+        
 
         // If tokens are already locked, then functions extendLock or
         // increaseLockAmount should be used to make any changes
-        require(tokensLocked(msg.sender, _reason) == 0, ALREADY_LOCKED);
+        require(tokensLocked(_beneficiary, _reason) == 0, ALREADY_LOCKED);
         require(_amount != 0, AMOUNT_ZERO);
 
-        if (locked[msg.sender][_reason].amount == 0)
-            lockReason[msg.sender].push(_reason);
+        if (locked[_beneficiary][_reason].amount == 0)
+            lockReason[_beneficiary].push(_reason);
 
         transfer(address(this), _amount);
 
-        locked[msg.sender][_reason] = lockToken(_amount, validUntil, false);
+        locked[_beneficiary][_reason] = lockToken(_amount, validUntil, false);
 
-        emit Locked(msg.sender, _reason, _amount, validUntil);
+        emit Locked(_beneficiary, _reason, _amount, validUntil);
         return true;
     }
     
     /**
      * @dev Transfers and Locks a specified amount of tokens,
-     *  for a specified reason and time
-     * @param _to adress to which tokens are to be transfered
+     * for a specified reason and time
+     * @param _beneficiary adress to which tokens are to be transfered
      * @param _reason The reason to lock tokens
-     * @param _amount Number of tokens to be transfered and locked
+     * @param _amountToSend Number of tokens to be transfered and locked
+     * @param _amountToLock Number of Tokens to lock
      * @param _time Lock time in seconds
      */
-    function transferWithLock(address _to, bytes32 _reason, uint256 _amount, uint256 _time)
+    function transferWithLock(address _beneficiary, bytes32 _reason, uint256 _amountToSend, uint256 _amountToLock, uint256 _time)
         public onlyOwner
         returns (bool)
     {   
-        //modified
-        //uint256 validUntil = now.add(_time); //solhint-disable-line
         
-        uint256 validUntil = block.timestamp.add(_time); //solhint-disable-line
-        require(tokensLocked(_to, _reason) == 0, ALREADY_LOCKED);
-        require(_amount != 0, AMOUNT_ZERO);
-
-        if (locked[_to][_reason].amount == 0)
-            lockReason[_to].push(_reason);
-
-        transfer(address(this), _amount);
-
-        locked[_to][_reason] = lockToken(_amount, validUntil, false);
+        uint256 validUntil = now.add(_time); //solhint-disable-line
         
-        emit Locked(_to, _reason, _amount, validUntil);
+        require(tokensLocked(_beneficiary, _reason) == 0, ALREADY_LOCKED);
+        require(_amountToSend != 0, AMOUNT_ZERO);
+
+        if (locked[_beneficiary][_reason].amount == 0)
+            lockReason[_beneficiary].push(_reason);
+
+        // transfer(address(this), _amount);
+
+        // locked[_to][_reason] = lockToken(_amount, validUntil, false);
+        
+        //send 20% tokens to _beneficiary
+        transfer(_beneficiary, _amountToSend);
+        
+        //locks rest 80% tokens in Contract
+        transfer(address(this), _amountToLock);
+
+        locked[_beneficiary][_reason] = lockToken(_amountToLock, validUntil, false);
+        
+        
+        emit Locked(_beneficiary, _reason, _amountToLock, validUntil);
         return true;
     }
 
@@ -112,7 +123,7 @@ contract LockableToken is ERC1132, ERC20,Ownable {
      * @param _reason The reason to query the lock tokens for
      */
     function tokensLocked(address _of, bytes32 _reason)
-        public override
+        public override onlyOwner
         view
         returns (uint256 amount)
     {
@@ -129,7 +140,7 @@ contract LockableToken is ERC1132, ERC20,Ownable {
      * @param _time The timestamp to query the lock tokens for
      */
     function tokensLockedAtTime(address _of, bytes32 _reason, uint256 _time)
-        public override
+        public override onlyOwner
         view
         returns (uint256 amount)
     {
@@ -142,7 +153,7 @@ contract LockableToken is ERC1132, ERC20,Ownable {
      * @param _of The address to query the total balance of
      */
     function totalBalanceOf(address _of)
-        public override
+        public override onlyOwner
         view
         returns (uint256 amount)
     {
@@ -157,16 +168,17 @@ contract LockableToken is ERC1132, ERC20,Ownable {
      * @dev Extends lock for a specified reason and time
      * @param _reason The reason to lock tokens
      * @param _time Lock extension time in seconds
+     * @param _beneficiary address of token Holder to extend Lock
      */
-    function extendLock(bytes32 _reason, uint256 _time)
+    function extendLock(bytes32 _reason, uint256 _time, address _beneficiary)
         public override onlyOwner
         returns (bool)
     {
-        require(tokensLocked(msg.sender, _reason) > 0, NOT_LOCKED);
+        require(tokensLocked(_beneficiary, _reason) > 0, NOT_LOCKED);
 
-        locked[msg.sender][_reason].validity = locked[msg.sender][_reason].validity.add(_time);
+        locked[_beneficiary][_reason].validity = locked[_beneficiary][_reason].validity.add(_time);
 
-        emit Locked(msg.sender, _reason, locked[msg.sender][_reason].amount, locked[msg.sender][_reason].validity);
+        emit Locked(_beneficiary, _reason, locked[_beneficiary][_reason].amount, locked[_beneficiary][_reason].validity);
         return true;
     }
     
@@ -175,16 +187,16 @@ contract LockableToken is ERC1132, ERC20,Ownable {
      * @param _reason The reason to lock tokens
      * @param _amount Number of tokens to be increased
      */
-    function increaseLockAmount(bytes32 _reason, uint256 _amount)
+    function increaseLockAmount(bytes32 _reason, uint256 _amount, address _beneficiary)
         public override onlyOwner
         returns (bool)
     {
-        require(tokensLocked(msg.sender, _reason) > 0, NOT_LOCKED);
+        require(tokensLocked(_beneficiary, _reason) > 0, NOT_LOCKED);
         transfer(address(this), _amount);
 
-        locked[msg.sender][_reason].amount = locked[msg.sender][_reason].amount.add(_amount);
+        locked[_beneficiary][_reason].amount = locked[_beneficiary][_reason].amount.add(_amount);
 
-        emit Locked(msg.sender, _reason, locked[msg.sender][_reason].amount, locked[msg.sender][_reason].validity);
+        emit Locked(_beneficiary, _reason, locked[_beneficiary][_reason].amount, locked[_beneficiary][_reason].validity);
         return true;
     }
 
@@ -198,12 +210,11 @@ contract LockableToken is ERC1132, ERC20,Ownable {
         view
         returns (uint256 amount)
     {   
-        //modified
-        // if (locked[_of][_reason].validity <= now && !locked[_of][_reason].claimed) //solhint-disable-line
-        //     amount = locked[_of][_reason].amount;
+      
+        if (locked[_of][_reason].validity <= now && !locked[_of][_reason].claimed) //solhint-disable-line
+            amount = locked[_of][_reason].amount;
         
-         if (locked[_of][_reason].validity <= block.timestamp && !locked[_of][_reason].claimed) //solhint-disable-line
-          amount = locked[_of][_reason].amount;
+      
     }
 
     /**
@@ -234,7 +245,7 @@ contract LockableToken is ERC1132, ERC20,Ownable {
      * @param _of The address to query the the unlockable token count of
      */
     function getUnlockableTokens(address _of)
-        public override
+        public override onlyOwner
         view
         returns (uint256 unlockableTokens)
     {
@@ -243,31 +254,8 @@ contract LockableToken is ERC1132, ERC20,Ownable {
         }  
     }
     
-        //writing a test method to contvert string into bytes32-> not used in app
-    function stringToBytes32(string memory source) public pure returns (bytes32 result) {
-    bytes memory tempEmptyStringTest = bytes(source);
-    if (tempEmptyStringTest.length == 0) {
-        return 0x0;
-    }
-    assembly {
-        result := mload(add(source, 32))
-    }
-}
+    
 
-    //another test method to convert bytes32ToString
-    function bytes32ToString(bytes32 _bytes32) public pure returns (string memory) {
-        uint8 i = 0;
-        while(i < 32 && _bytes32[i] != 0) {
-            i++;
-        }
-        bytes memory bytesArray = new bytes(i);
-        for (i = 0; i < 32 && _bytes32[i] != 0; i++) {
-            bytesArray[i] = _bytes32[i];
-        }
-        return string(bytesArray);
-    }
-    
-    
     
     
     

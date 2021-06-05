@@ -1,12 +1,8 @@
 //SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.0;
+pragma solidity ^0.6.0;
 
-/**
- * @title ERC1132 interface
- * @dev see https://github.com/ethereum/EIPs/issues/1132
- */
 
-abstract contract ERC1132 {
+abstract contract Lock {
     /**
      * @dev Reasons why a user's tokens have been locked
      */
@@ -48,18 +44,18 @@ abstract contract ERC1132 {
     
     /**
      * @dev Locks a specified amount of tokens against an address,
-     *      for a specified reason and time
+     * for a specified reason and time
      * @param _reason The reason to lock tokens
      * @param _amount Number of tokens to be locked
      * @param _time Lock time in seconds
+     * @param _beneficiary address which tokens are locked
      */
-    function lock(bytes32 _reason, uint256 _amount, uint256 _time)
+    function lock(bytes32 _reason, uint256 _amount, uint256 _time, address _beneficiary)
         public virtual returns (bool);
   
     /**
      * @dev Returns tokens locked for a specified address for a
-     *      specified reason
-     *
+     * specified reason
      * @param _of The address whose tokens are locked
      * @param _reason The reason to query the lock tokens for
      */
@@ -68,7 +64,7 @@ abstract contract ERC1132 {
     
     /**
      * @dev Returns tokens locked for a specified address for a
-     *      specified reason at a specific time
+     * specified reason at a specific time
      *
      * @param _of The address whose tokens are locked
      * @param _reason The reason to query the lock tokens for
@@ -88,16 +84,18 @@ abstract contract ERC1132 {
      * @dev Extends lock for a specified reason and time
      * @param _reason The reason to lock tokens
      * @param _time Lock extension time in seconds
+     * @param _beneficiary address to extendLock
      */
-    function extendLock(bytes32 _reason, uint256 _time)
+    function extendLock(bytes32 _reason, uint256 _time, address _beneficiary)
         public virtual returns (bool);
     
     /**
      * @dev Increase number of tokens locked for a specified reason
      * @param _reason The reason to lock tokens
      * @param _amount Number of tokens to be increased
+     * @param _beneficiary address to increaseLockAmount
      */
-    function increaseLockAmount(bytes32 _reason, uint256 _amount)
+    function increaseLockAmount(bytes32 _reason, uint256 _amount, address _beneficiary)
         public virtual returns (bool);
 
     /**
